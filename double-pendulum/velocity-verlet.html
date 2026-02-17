@@ -1,0 +1,94 @@
+<body
+  style="
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 0;
+    padding: 0;
+  "
+>
+  <canvas id="canvas-1" width="512" height="512"></canvas>
+
+  <script type="module">
+    import { createPendulum } from "./createPendulum.js";
+
+    //   SImulation parts
+    const urlParams = new URLSearchParams(window.location.search);
+
+    const { draw, drawText, l, m, g, dt, simulationSpeedFactor } =
+      createPendulum("canvas-1", {
+        dt: parseFloat(urlParams.get("dt")) || 0.01,
+      });
+
+    function getDerivative(theta1, theta2, theta1dot, theta2dot, t) {
+      const dTheta = theta2 - theta1;
+
+      const cosDTheta = Math.cos(dTheta);
+      const sinDTheta = Math.sin(dTheta);
+
+      const theta1ddot =
+        ((g / l) * Math.sin(theta2) * cosDTheta -
+          theta2dot * theta2dot * sinDTheta -
+          ((2 * g) / l) * Math.sin(theta1)) /
+        (2 - cosDTheta * cosDTheta);
+
+      const theta2ddot =
+        (((2 * g) / l) * Math.sin(theta2) -
+          theta1dot * theta1dot * sinDTheta -
+          theta2dot * theta2dot * sinDTheta * cosDTheta -
+          ((2 * g) / l) * Math.sin(theta1) * cosDTheta) /
+        (cosDTheta * cosDTheta - 2);
+
+      return [theta1ddot, theta2ddot];
+    }
+
+    let theta1 = -2.0; // radian
+    let theta1dot = 0;
+    let theta2 = -1;
+    let theta2dot = 0;
+
+    let currentStep = 0;
+
+    // Dangerous Implementation as not insure the order of calculation for simulation
+    setInterval(() => {
+      const a0 = getDerivative(
+        theta1,
+        theta2,
+        theta1dot,
+        theta2dot,
+        currentStep * dt
+      );
+
+      theta1 += theta1dot * dt + (1 / 2) * a0[0] * dt * dt;
+      theta2 += theta2dot * dt + (1 / 2) * a0[1] * dt * dt;
+
+      const a1 = getDerivative(
+        theta1,
+        theta2,
+        theta1dot,
+        theta2dot,
+        currentStep * dt
+      );
+
+      theta1dot += (1 / 2) * (a0[0] + a1[0]) * dt;
+      theta2dot += (1 / 2) * (a0[1] + a1[1]) * dt;
+
+      draw(theta1, theta2);
+
+      const T =
+        0.5 *
+        m *
+        l *
+        l *
+        (2 * theta1dot * theta1dot +
+          theta2dot * theta2dot +
+          2 * theta1dot * theta2dot * Math.cos(theta1 - theta2));
+      const V = m * g * l * (4 - 2 * Math.cos(theta1) - Math.cos(theta2));
+      const totalEnergy = T + V;
+      drawText("Velocity Verlet (not works well)", 10, 20);
+      drawText(`T+V: ${totalEnergy.toFixed(2)}`, 10, 40);
+
+      currentStep += 1;
+    }, dt * simulationSpeedFactor);
+  </script>
+</body>

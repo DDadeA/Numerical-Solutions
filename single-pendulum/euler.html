@@ -1,0 +1,47 @@
+<body
+  style="
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 0;
+    padding: 0;
+  "
+>
+  <canvas id="canvas-1" width="512" height="512"></canvas>
+
+  <script type="module">
+    import { createPendulum } from "./createPendulum.js";
+
+    const urlParams = new URLSearchParams(window.location.search);
+
+    //   SImulation parts
+    const { draw, drawText, l, m, g, dt, simulationSpeedFactor } =
+      createPendulum("canvas-1", {
+        dt: parseFloat(urlParams.get("dt")) || 0.01,
+      });
+
+    function getThetaDdot(theta) {
+      return (-g / l) * Math.sin(theta);
+    }
+
+    let theta = 0.5; // radian
+    let v = 0; // v_theta
+
+    // Dangerous Implementation as not insure the order of calculation for simulation
+    setInterval(() => {
+      const a = getThetaDdot(theta);
+      const _v = v + a * dt; // This is treditional euler's method
+      const _theta = theta + v * dt;
+
+      v = _v;
+      theta = _theta;
+
+      draw(theta);
+
+      const totalEnergy =
+        0.5 * m * l * l * v * v + m * g * l * (1 - Math.cos(theta));
+      drawText("Euler's Method", 10, 20);
+      drawText(`T+V: ${totalEnergy.toFixed(2)}`, 10, 40);
+    }, dt * simulationSpeedFactor);
+  </script>
+</body>

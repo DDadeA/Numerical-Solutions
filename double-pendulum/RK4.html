@@ -1,0 +1,122 @@
+<body
+  style="
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 0;
+    padding: 0;
+  "
+>
+  <canvas id="canvas-1" width="512" height="512"></canvas>
+
+  <script type="module">
+    import { createPendulum } from "./createPendulum.js";
+
+    //   SImulation parts
+    const urlParams = new URLSearchParams(window.location.search);
+
+    const { draw, drawText, l, m, g, dt, simulationSpeedFactor } =
+      createPendulum("canvas-1", {
+        dt: parseFloat(urlParams.get("dt")) || 0.01,
+      });
+
+    function getDerivative(p1, p2, theta1, theta2, t) {
+      const dTheta = theta2 - theta1;
+
+      const cosDTheta = Math.cos(dTheta);
+      const sinDTheta = Math.sin(dTheta);
+
+      const f = p1 * p1 + 2 * p2 * p2 - 2 * p1 * p2 * cosDTheta;
+      const fPrime = 2 * p1 * p2 * sinDTheta;
+
+      const denom = 2 * m * l * l * (2 - cosDTheta * cosDTheta);
+      const denomPrime = 4 * m * l * l * sinDTheta * cosDTheta;
+
+      const dTdDTheta = (fPrime * denom - f * denomPrime) / (denom * denom);
+
+      const p1dot = -(-dTdDTheta + m * g * l * 2 * Math.sin(theta1));
+      const p2dot = -(dTdDTheta + m * g * l * Math.sin(theta2));
+
+      const theta1dot = ((p1 - p2 * cosDTheta) * 2) / denom;
+      const theta2dot = ((2 * p2 - p1 * cosDTheta) * 2) / denom;
+      return [p1dot, p2dot, theta1dot, theta2dot];
+    }
+
+    let p1 = 0; // p_theta
+    let theta1 = -2.0; // radian
+    let p2 = 0;
+    let theta2 = -1;
+
+    let currentStep = 0;
+
+    // Dangerous Implementation as not insure the order of calculation for simulation
+    setInterval(() => {
+      const k1 = getDerivative(
+        p1,
+        p2,
+        theta1,
+        theta2,
+        currentStep * dt + dt / 2
+      );
+      const y1 = [
+        p1 + (k1[0] * dt) / 2,
+        p2 + (k1[1] * dt) / 2,
+        theta1 + (k1[2] * dt) / 2,
+        theta2 + (k1[3] * dt) / 2,
+      ];
+      const k2 = getDerivative(
+        y1[0],
+        y1[1],
+        y1[2],
+        y1[3],
+        currentStep * dt + dt / 2
+      );
+      const y2 = [
+        p1 + (k2[0] * dt) / 2,
+        p2 + (k2[1] * dt) / 2,
+        theta1 + (k2[2] * dt) / 2,
+        theta2 + (k2[3] * dt) / 2,
+      ];
+      const k3 = getDerivative(
+        y2[0],
+        y2[1],
+        y2[2],
+        y2[3],
+        currentStep * dt + dt / 2
+      );
+      const y3 = [
+        p1 + k3[0] * dt,
+        p2 + k3[1] * dt,
+        theta1 + k3[2] * dt,
+        theta2 + k3[3] * dt,
+      ];
+      const k4 = getDerivative(
+        y3[0],
+        y3[1],
+        y3[2],
+        y3[3],
+        (currentStep + 1) * dt
+      );
+
+      p1 += (dt / 6) * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]);
+      p2 += (dt / 6) * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]);
+      theta1 += (dt / 6) * (k1[2] + 2 * k2[2] + 2 * k3[2] + k4[2]);
+      theta2 += (dt / 6) * (k1[3] + 2 * k2[3] + 2 * k3[3] + k4[3]);
+
+      draw(theta1, theta2);
+      const dTheta = theta2 - theta1;
+      const numerator = p1 * p1 + 2 * p2 * p2 - 2 * p1 * p2 * Math.cos(dTheta);
+      const denominator =
+        2 * m * l * l * (1 + Math.sin(dTheta) * Math.sin(dTheta));
+      const T = numerator / denominator;
+
+      const V = -m * g * l * (2 * Math.cos(theta1) + Math.cos(theta2));
+
+      const totalEnergy = T + V;
+      drawText("Runge-Kutta 4th Order", 10, 20);
+      drawText(`T+V: ${totalEnergy.toFixed(2)}`, 10, 40);
+
+      currentStep += 1;
+    }, dt * simulationSpeedFactor);
+  </script>
+</body>

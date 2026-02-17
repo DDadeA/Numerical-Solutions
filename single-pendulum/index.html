@@ -1,0 +1,93 @@
+<head>
+  <style type="text/css">
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+    }
+
+    #controls-container {
+      display: flex;
+      gap: 20px;
+    }
+
+    #simulation-container {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+
+      justify-content: space-around;
+      align-items: center;
+
+      max-width: 100%;
+
+      & > iframe {
+        width: 512px;
+        height: 512px;
+
+        border: 1px solid #ccc;
+      }
+    }
+  </style>
+</head>
+<body>
+  <script>
+    function updateIframes() {
+      const iframes = document.querySelectorAll("#simulation-container iframe");
+      iframes.forEach((iframe) => {
+        iframe.src =
+          iframe.src.split("?")[0] +
+          "?dt=" +
+          Math.pow(10, document.getElementById("step-size").value - 2).toFixed(
+            2
+          );
+      });
+    }
+  </script>
+  <h2>Single Pendulum Simulations</h2>
+  <div id="controls-container">
+    <div>
+      <p>Step size: <span id="dt">0.1</span>sec</p>
+      <input
+        type="range"
+        id="step-size"
+        min="0"
+        max="1.6"
+        step="0.01"
+        value="1"
+        oninput="
+        
+            document.getElementById('dt').textContent = (Math.pow(10, this.value - 2)).toFixed(2);
+            updateIframes();
+        "
+      />
+    </div>
+  </div>
+
+  <div id="simulation-container">
+    <iframe
+      src="euler.html"
+      title="Single Pendulum Euler's Method"
+      width="512"
+      height="512"
+    ></iframe>
+
+    <iframe
+      src="semi-implicit-euler.html"
+      title="Single Pendulum Semi-Implicit Euler's Method"
+      width="512"
+      height="512"
+    ></iframe>
+
+    <iframe
+      src="RK4.html"
+      title="Single Pendulum RK4 Method"
+      width="512"
+      height="512"
+    ></iframe>
+
+    <iframe src="velocity-verlet.html" title="Single Pendulum Velocity Verlet
+    Method" width="512" height="512"
+  </div>
+</body>

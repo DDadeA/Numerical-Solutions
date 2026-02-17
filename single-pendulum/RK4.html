@@ -1,0 +1,57 @@
+<body
+  style="
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 0;
+    padding: 0;
+  "
+>
+  <canvas id="canvas-1" width="512" height="512"></canvas>
+
+  <script type="module">
+    import { createPendulum } from "./createPendulum.js";
+
+    //   SImulation parts
+    const urlParams = new URLSearchParams(window.location.search);
+
+    const { draw, drawText, l, m, g, dt, simulationSpeedFactor } =
+      createPendulum("canvas-1", {
+        dt: parseFloat(urlParams.get("dt")) || 0.01,
+      });
+    function getDerivative(p, theta, t) {
+      const pdot = -m * g * l * Math.sin(theta);
+      const thetadot = p / (m * l * l);
+      return [pdot, thetadot];
+    }
+
+    let p = 0; // p_theta
+    let theta = 0.5; // radian
+
+    let pdot = 0;
+    let thetadot = 0;
+    let currentStep = 0;
+
+    // Dangerous Implementation as not insure the order of calculation for simulation
+    setInterval(() => {
+      const k1 = getDerivative(p, theta, currentStep * dt + dt / 2); // In this case, we don't need time for calculation but I want to make it clear.
+      const y1 = [p + (k1[0] * dt) / 2, theta + (k1[1] * dt) / 2];
+      const k2 = getDerivative(y1[0], y1[1], currentStep * dt + dt / 2);
+      const y2 = [p + (k2[0] * dt) / 2, theta + (k2[1] * dt) / 2];
+      const k3 = getDerivative(y2[0], y2[1], currentStep * dt + dt / 2);
+      const y3 = [p + k3[0] * dt, theta + k3[1] * dt];
+      const k4 = getDerivative(y3[0], y3[1], (currentStep + 1) * dt);
+
+      p += (dt / 6) * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]);
+      theta += (dt / 6) * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]);
+
+      draw(theta);
+      const totalEnergy =
+        (0.5 * l * l * p * p) / m + m * g * l * (1 - Math.cos(theta));
+      drawText("Runge-Kutta 4th Order", 10, 20);
+      drawText(`T+V: ${totalEnergy.toFixed(2)}`, 10, 40);
+
+      currentStep += 1;
+    }, dt * simulationSpeedFactor);
+  </script>
+</body>
