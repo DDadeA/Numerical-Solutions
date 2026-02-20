@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0"
+      name="viewport"
+    />
+    <script
+      type="text/javascript"
+      src="https://npmcdn.com/regl/dist/regl.js"
+    ></script>
+    <meta charset="utf-8" />
+  </head>
+  <body>
+    <script language="javascript" type="module">
+      try {
+        document.title = "Loading regl...";
+
+        var regl = createREGL({
+          extensions: ["OES_texture_float"],
+        });
+
+        document.title = "regl loaded";
+
+        const state = Array(2)
+          .fill()
+          .map(() =>
+            regl.framebuffer({
+              color: regl.texture({
+                width: 1920 * 1,
+                height: 1080 * 1,
+                type: "float",
+              }),
+              depthStencil: false,
+            })
+          );
+
+        const setupQuad = regl({
+          vert: `
+            precision mediump float;
+            attribute vec2 position;
+            varying vec2 vUv;
+
+            void main() {
+              vUv = 0.5 * (position + 1.0);
+              gl_Position = vec4(position, 0, 1);
+            }
+          `,
+          attributes: {
+            position: [-4, -4, 4, -4, 0, 4],
+          },
+          count: 3,
+        });
+
+        document.title = "Initializing simulation...";
+
+        const initSimulation = regl({
+          frag: `
+            precision mediump float;
+            varying vec2 vUv;
+            #define PI 3.14159265359
+
+            #define EV_PER_WIDTH 2.0
+            #define EV_PER_HEIGHT 1.0
+
+            void main() {
+
+              float theta1 = (vUv.x - 0.5) * 2.0 * PI * EV_PER_WIDTH;
+              float theta2 = (vUv.y - 0.5) * 2.0 * PI * EV_PER_HEIGHT;
+
+              float p1 = 0.0;
+              float p2 = 0.0;
+
+              gl_FragColor = vec4(theta1, theta2, p1, p2);
+            }
+          `,
+
+          framebuffer: regl.prop("dst"), // destination
+        });
+
+        // initSimulation({ dst: state.r });
+        // initSimulation({ dst: state.g });
+
+        setupQuad(() => {
+          initSimulation({ dst: state[0] });
+          initSimulation({ dst: state[1] });
+        });
+
+        document.title = "Starting simulation...";
+
+        const calc = regl({
+          frag: `
+            precision mediump float;
+            varying vec2 vUv;
+            uniform sampler2D prevState;
+
+            #define PI 3.14159265359
+
+          vec4 getDerivative(float p1, float p2, float t1, float t2) {
+            float m = 1.0;
+            float l = 1.0;
+            float g = 9.8;
+            float dt = 0.01;
+            
+            float dTheta = t2 - t1;
+            float cosDTheta = cos(dTheta);
+            float sinDTheta = sin(dTheta);
+
+            float f = p1 * p1 + 2.0 * p2 * p2 - 2.0 * p1 * p2 * cosDTheta;
+            float fPrime = 2.0 * p1 * p2 * sinDTheta;
+
+            float denom = 2.0 * m * l * l * (2.0 - cosDTheta * cosDTheta);
+            float denomPrime = 4.0 * m * l * l * sinDTheta * cosDTheta;
+
+            float dTdDTheta = (fPrime * denom - f * denomPrime) / (denom * denom);
+
+            float p1dot = -(m * g * l * 2.0 * sin(t1) - dTdDTheta);
+            float p2dot = -(dTdDTheta + m * g * l * sin(t2));
+
+            float theta1dot = ((p1 - p2 * cosDTheta) * 2.0) / denom;
+            float theta2dot = ((2.0 * p2 - p1 * cosDTheta) * 2.0) / denom;
+            
+            return vec4(p1dot, p2dot, theta1dot, theta2dot);
+          }
+
+          void main() {
+          float dt = 0.01;
+            vec4 s = texture2D(prevState, vUv);
+            
+            float theta1 = s.r;
+            float theta2 = s.g;
+            float p1 = s.b;
+            float p2 = s.a;
+
+            vec4 k1 = getDerivative(p1, p2, theta1, theta2);
+            vec4 k2 = getDerivative(p1 + (k1.r * dt) / 2.0, p2 + (k1.g * dt) / 2.0, theta1 + (k1.b * dt) / 2.0, theta2 + (k1.a * dt) / 2.0);
+            vec4 k3 = getDerivative(p1 + (k2.r * dt) / 2.0, p2 + (k2.g * dt) / 2.0, theta1 + (k2.b * dt) / 2.0, theta2 + (k2.a * dt) / 2.0);
+            vec4 k4 = getDerivative(p1 + k3.r * dt, p2 + k3.g * dt, theta1 + k3.b * dt, theta2 + k3.a * dt);
+
+            p1 += (dt / 6.0) * (k1.r + 2.0 * k2.r + 2.0 * k3.r + k4.r);
+            p2 += (dt / 6.0) * (k1.g + 2.0 * k2.g + 2.0 * k3.g + k4.g);
+            theta1 += (dt / 6.0) * (k1.b + 2.0 * k2.b + 2.0 * k3.b + k4.b);
+            theta2 += (dt / 6.0) * (k1.a + 2.0 * k2.a + 2.0 * k3.a + k4.a);
+
+            gl_FragColor = vec4(theta1, theta2, p1, p2);
+        }
+            `,
+          framebuffer: ({ tick }) => state[(tick + 1) % 2],
+          uniforms: {
+            prevState: ({ tick }) => state[tick % 2],
+          },
+        });
+
+        document.title = "Starting render loop...";
+
+        // render the state to the screen
+        const draw = regl({
+          frag: `
+            precision mediump float;
+            varying vec2 vUv;
+            uniform sampler2D state;
+
+            void main() {
+              vec4 s = texture2D(state, vUv);
+              gl_FragColor = vec4(s.r, 0.0, s.g, 1.0);
+            }
+          `,
+          uniforms: {
+            state: ({ tick }) => state[tick % 2],
+          },
+        });
+
+        regl.frame(() => {
+          document.title = `Tick: ${regl.now().toFixed(2)}`;
+          setupQuad(() => {
+            calc();
+            draw();
+          });
+        });
+      } catch (e) {
+        alert("Error loading regl: " + e.message);
+      }
+    </script>
+  </body>
+</html>
