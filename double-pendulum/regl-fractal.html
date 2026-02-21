@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
   <head>
     <meta
@@ -9,34 +9,402 @@
       type="text/javascript"
       src="https://npmcdn.com/regl/dist/regl.js"
     ></script>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+      #controls {
+        position: fixed;
+        top: 10px;
+        left: 10px;
+        background: rgba(255, 255, 255, 0.8);
+        padding: 10px;
+        border-radius: 5px;
+        z-index: 1000;
+      }
+      #controls label {
+        display: block;
+        margin-bottom: 5px;
+      }
+      #controls input[type="number"] {
+        width: 60px;
+      }
+    </style>
     <meta charset="utf-8" />
   </head>
   <body>
+    <canvas id="canvas" style="width: 100vw; height: 100vh"></canvas>
     <script language="javascript" type="module">
-      try {
-        document.title = "Loading regl...";
+      document.title = "Loading regl...";
+      // Initialize screen size
+      const width = Math.floor(window.innerWidth);
+      const height = Math.floor(window.innerHeight);
+      const canvas = document.getElementById("canvas");
+      canvas.width = width;
+      canvas.height = height;
 
-        var regl = createREGL({
-          extensions: ["OES_texture_float"],
+      let clickedDatas = null;
+      let solvedData = null;
+
+      let audioCtx;
+      document
+        .getElementById("volume-slider")
+        .addEventListener("input", (e) => {
+          const volume = parseFloat(e.target.value);
+          if (soundSource) {
+            soundSource.disconnect();
+            const gainNode = audioCtx.createGain();
+            gainNode.gain.value = volume;
+            soundSource.connect(gainNode).connect(audioCtx.destination);
+          }
         });
+      function playSoundFromArrs(arr1, arr2) {
+        // Create sound based on the angles
+        const sampleRate = 22050; // low sample rate
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
 
-        document.title = "regl loaded";
+        if (arr1.length !== arr2.length) {
+          console.error("Arrays must be of the same length");
+          return;
+        }
 
-        const state = Array(2)
-          .fill()
-          .map(() =>
-            regl.framebuffer({
-              color: regl.texture({
-                width: 1920 * 1,
-                height: 1080 * 1,
-                type: "float",
-              }),
-              depthStencil: false,
-            })
+        // 3. Create an empty AudioBuffer
+        // Parameters: (numberOfChannels, lengthInSamples, sampleRate)
+        const buffer = audioCtx.createBuffer(
+          2,
+          arr1.length,
+          audioCtx.sampleRate,
+        );
+
+        // 4. Copy your array data into the AudioBuffer
+        // We get the first channel (0) since it's mono sound
+        const channelData0 = buffer.getChannelData(0);
+        const channelData1 = buffer.getChannelData(1);
+        const max0 = Math.max(...arr1.map((x) => Math.abs(x)));
+        const max1 = Math.max(...arr2.map((x) => Math.abs(x)));
+
+        for (let i = 0; i < arr1.length; i++) {
+          channelData0[i] = (arr1[i] / max0) * 0.8;
+          channelData1[i] = (arr2[i] / max1) * 0.8;
+        }
+
+        // 5. Create a source node to play the buffer
+        const source = audioCtx.createBufferSource();
+        source.buffer = buffer;
+
+        const gainNode = audioCtx.createGain();
+        gainNode.gain.value = parseFloat(
+          document.getElementById("volume-slider").value,
+        );
+        source.connect(gainNode).connect(audioCtx.destination);
+
+        // Play the sound! (looped for continuous sound)
+        source.loop = true;
+        source.start();
+
+        return source; // Return the source so we can stop it later if needed
+      }
+
+      let soundSource = null;
+      let mouseDown = null;
+      let draggingData = null;
+      let isDragging = false;
+      canvas.addEventListener("mousedown", (e) => {
+        isDragging = true;
+        mouseDown = { x: e.layerX, y: e.layerY };
+        draggingData = {
+          currentX: e.layerX,
+          currentY: e.layerY,
+        };
+      });
+      canvas.addEventListener("mouseup", (e) => {
+        isDragging = false;
+      });
+
+      // Drag function to handle camera panning
+      function handleDrag(currentX, currentY) {
+        if (!isDragging || !mouseDown) {
+          return;
+        }
+
+        const zoomFactor = camera[2];
+
+        // Calculate change in position since last drag update (from previous position to current)
+        const dx = (draggingData.currentX - currentX) / width / zoomFactor;
+        const dy = (draggingData.currentY - currentY) / height / zoomFactor;
+
+        // Update camera position
+        camera[0] += dx;
+        camera[1] -= dy;
+
+        // Update dragging data for next mousemove event
+        draggingData = {
+          currentX: currentX,
+          currentY: currentY,
+        };
+      }
+
+      canvas.addEventListener("mousemove", (e) => {
+        handleDrag(e.layerX, e.layerY);
+      });
+      canvas.addEventListener(
+        "click",
+        (e) => {
+          // If it's dragging, ignore the click (check the distance)
+          if (mouseDown) {
+            const dx = mouseDown.x - e.layerX;
+            const dy = mouseDown.y - e.layerY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            console.log("Distance from mousedown to click:", distance);
+            if (distance > 10) {
+              console.log("Dragging detected, ignoring click");
+              return;
+            }
+          }
+
+          if (
+            clickedDatas &&
+            clickedDatas.x === e.layerX &&
+            clickedDatas.y === e.layerY
+          ) {
+            // If the same point is clicked again, reset the coordinates
+            clickedDatas = null;
+            document.getElementById("clicked-coords").textContent = "";
+            const debug_canvas = document.getElementById("debug-canvas");
+            debug_canvas.style.display = "none";
+            if (soundSource) {
+              soundSource.stop();
+              soundSource = null;
+            }
+            return;
+          }
+
+          const debug_canvas = document.getElementById("debug-canvas");
+          debug_canvas.style.display = "block";
+          const uvx =
+            (e.layerX / width / initialCamera[2] + initialCamera[0]) /
+              camera[2] +
+            camera[0];
+          const uvy =
+            (e.layerY / height / initialCamera[2] - initialCamera[1]) /
+              camera[2] -
+            camera[1];
+
+          clickedDatas = {
+            x: e.layerX,
+            y: e.layerY,
+            theta1: (-uvx + 0.5) * 2.0 * Math.PI * Math.floor(width / height),
+            theta2: (uvy - 0.5) * 2.0 * Math.PI,
+            p1: 0,
+            p2: 0,
+          };
+          solvedData = solveDPCPUFast(
+            clickedDatas,
+            100000,
+            parseFloat(document.getElementById("dt").value) || 0.01,
           );
 
-        const setupQuad = regl({
-          vert: `
+          if (soundSource) {
+            soundSource.stop();
+          }
+          soundSource = playSoundFromArrs(
+            solvedData.map((d) => Math.sin(d.theta1)),
+            solvedData.map((d) => Math.sin(d.theta2)),
+          );
+        },
+        false,
+      );
+
+      let camera = [0.0, 0.0, 1.0];
+      let initialCamera = [...camera];
+      document
+        .getElementById("reset-camera-btn")
+        .addEventListener("click", () => {
+          initialCamera = [0.0, 0.0, 1.0];
+          camera = [0.0, 0.0, 1.0];
+          mainSimulation();
+        });
+      addEventListener("wheel", (e) => {
+        const zoomAmount = 1.1;
+
+        // Prevent sideways scrolling
+        if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+          return;
+        }
+
+        if (e.deltaY < 0) {
+          camera[2] *= zoomAmount;
+        } else {
+          camera[2] /= zoomAmount;
+        }
+        e.preventDefault();
+      });
+
+      function drawDebug(tick) {
+        const data = solvedData[tick];
+        const debug_canvas = document.getElementById("debug-canvas");
+        const ctx = debug_canvas.getContext("2d");
+
+        // Draw the double pendulum
+        ctx.clearRect(0, 0, debug_canvas.width, debug_canvas.height);
+
+        const x1 = 256 + 100 * Math.sin(data.theta1);
+        const y1 = 256 + 100 * Math.cos(data.theta1);
+        const x2 = x1 + 100 * Math.sin(data.theta2);
+        const y2 = y1 + 100 * Math.cos(data.theta2);
+
+        ctx.beginPath();
+        ctx.moveTo(256, 256);
+        ctx.lineTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.strokeStyle = "black";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(x1, y1, 5, 0, 2 * Math.PI);
+        ctx.arc(x2, y2, 5, 0, 2 * Math.PI);
+        ctx.fillStyle = "red";
+        ctx.fill();
+
+        // Draw the trace
+
+        ctx.moveTo(
+          256 + 100 * Math.sin(solvedData[0].theta2),
+          256 + 100 * Math.cos(solvedData[0].theta2),
+        );
+        ctx.beginPath();
+
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = "rgba(255, 0, 255, 0.5)";
+        for (
+          let i = 1;
+          i <
+          Math.min(solvedData.length, Math.min(solvedData.length / 10, 30000));
+          i++
+        ) {
+          const x1 = 256 + 100 * Math.sin(solvedData[i].theta1);
+          const y1 = 256 + 100 * Math.cos(solvedData[i].theta1);
+          const x2 = x1 + 100 * Math.sin(solvedData[i].theta2);
+          const y2 = y1 + 100 * Math.cos(solvedData[i].theta2);
+          ctx.lineTo(x2, y2);
+        }
+        ctx.stroke();
+      }
+
+      function getDerivative(p1, p2, t1, t2) {
+        const m = 1.0;
+        const l = 1.0;
+        const g = 9.8;
+
+        const dTheta = t2 - t1;
+        const cosDTheta = Math.cos(dTheta);
+        const sinDTheta = Math.sin(dTheta);
+
+        const f = p1 * p1 + 2.0 * p2 * p2 - 2.0 * p1 * p2 * cosDTheta;
+        const fPrime = 2.0 * p1 * p2 * sinDTheta;
+
+        const denom = 2.0 * m * l * l * (2.0 - cosDTheta * cosDTheta);
+        const denomPrime = 4.0 * m * l * l * sinDTheta * cosDTheta;
+
+        const dTdDTheta = (fPrime * denom - f * denomPrime) / (denom * denom);
+
+        const p1dot = -(m * g * l * 2.0 * Math.sin(t1) - dTdDTheta);
+        const p2dot = -(dTdDTheta + m * g * l * Math.sin(t2));
+
+        const theta1dot = ((p1 - p2 * cosDTheta) * 2.0) / denom;
+        const theta2dot = ((2.0 * p2 - p1 * cosDTheta) * 2.0) / denom;
+
+        return { p1dot, p2dot, theta1dot, theta2dot };
+      }
+      // Return Array[{theta1, theta2, p1, p2}] of length step_to
+      function solveDPCPUFast(data, step_to = 10000, dt = dt) {
+        // Initialize
+        let returnData = [];
+        let { x, y, theta1, theta2, p1, p2 } = data;
+
+        for (let i = 0; i < step_to; i++) {
+          // Calculate derivatives
+          const k1 = getDerivative(p1, p2, theta1, theta2);
+          const k2 = getDerivative(
+            p1 + (k1.p1dot * dt) / 2.0,
+            p2 + (k1.p2dot * dt) / 2.0,
+            theta1 + (k1.theta1dot * dt) / 2.0,
+            theta2 + (k1.theta2dot * dt) / 2.0,
+          );
+          const k3 = getDerivative(
+            p1 + (k2.p1dot * dt) / 2.0,
+            p2 + (k2.p2dot * dt) / 2.0,
+            theta1 + (k2.theta1dot * dt) / 2.0,
+            theta2 + (k2.theta2dot * dt) / 2.0,
+          );
+          const k4 = getDerivative(
+            p1 + k3.p1dot * dt,
+            p2 + k3.p2dot * dt,
+            theta1 + k3.theta1dot * dt,
+            theta2 + k3.theta2dot * dt,
+          );
+
+          p1 +=
+            ((k1.p1dot + 2.0 * k2.p1dot + 2.0 * k3.p1dot + k4.p1dot) * dt) /
+            6.0;
+          p2 +=
+            ((k1.p2dot + 2.0 * k2.p2dot + 2.0 * k3.p2dot + k4.p2dot) * dt) /
+            6.0;
+          theta1 +=
+            ((k1.theta1dot +
+              2.0 * k2.theta1dot +
+              2.0 * k3.theta1dot +
+              k4.theta1dot) *
+              dt) /
+            6.0;
+          theta2 +=
+            ((k1.theta2dot +
+              2.0 * k2.theta2dot +
+              2.0 * k3.theta2dot +
+              k4.theta2dot) *
+              dt) /
+            6.0;
+
+          returnData.push({
+            theta1: theta1,
+            theta2: theta2,
+            p1: p1,
+            p2: p2,
+          });
+        }
+        return returnData;
+      }
+      // register canvas with regl
+      let regl = createREGL({
+        canvas: canvas,
+        extensions: ["OES_texture_float", "WEBGL_color_buffer_float"],
+      });
+
+      const state = Array(2)
+        .fill()
+        .map(() =>
+          regl.framebuffer({
+            color: regl.texture({
+              width: width * 3,
+              height: height * 3,
+              type: "float",
+              format: "rgba",
+            }),
+            depthStencil: false,
+          }),
+        );
+
+      const setupQuad = regl({
+        vert: `
             precision mediump float;
             attribute vec2 position;
             varying vec2 vUv;
@@ -46,27 +414,52 @@
               gl_Position = vec4(position, 0, 1);
             }
           `,
-          attributes: {
-            position: [-4, -4, 4, -4, 0, 4],
-          },
-          count: 3,
-        });
+        attributes: {
+          position: [-4, -4, 4, -4, 0, 4],
+        },
+        count: 3,
+      });
 
+      let reglFrame = null;
+      function mainSimulation() {
         document.title = "Initializing simulation...";
+        console.log("BF", initialCamera, camera);
+        initialCamera = [
+          camera[0] + initialCamera[0] / camera[2],
+          camera[1] + initialCamera[1] / camera[2],
+          camera[2] * initialCamera[2],
+        ];
+        camera = [0, 0, 1];
+        console.log("AF", initialCamera, camera);
+
+        if (reglFrame) {
+          reglFrame.cancel();
+        }
+
+        // Add context
+        document.title = "regl loaded";
+
+        // Reset regl
+        regl.clear({
+          color: [0, 0, 0, 1],
+          depth: 1,
+        });
 
         const initSimulation = regl({
           frag: `
             precision mediump float;
             varying vec2 vUv;
-            #define PI 3.14159265359
+            uniform float EV_PER_WIDTH;
+            uniform vec3 CAMERA;
 
-            #define EV_PER_WIDTH 2.0
+            #define PI 3.14159265359
             #define EV_PER_HEIGHT 1.0
 
-            void main() {
 
-              float theta1 = (vUv.x - 0.5) * 2.0 * PI * EV_PER_WIDTH;
-              float theta2 = (vUv.y - 0.5) * 2.0 * PI * EV_PER_HEIGHT;
+            void main() {
+              vec2 uv = vUv / CAMERA.z + CAMERA.xy;
+              float theta1 = ((uv.x - 0.5) * 2.0 * PI * EV_PER_WIDTH);
+              float theta2 = ((uv.y - 0.5) * 2.0 * PI * EV_PER_HEIGHT);
 
               float p1 = 0.0;
               float p2 = 0.0;
@@ -74,12 +467,12 @@
               gl_FragColor = vec4(theta1, theta2, p1, p2);
             }
           `,
-
+          uniforms: {
+            EV_PER_WIDTH: () => Math.floor(width / height),
+            CAMERA: () => initialCamera,
+          },
           framebuffer: regl.prop("dst"), // destination
         });
-
-        // initSimulation({ dst: state.r });
-        // initSimulation({ dst: state.g });
 
         setupQuad(() => {
           initSimulation({ dst: state[0] });
@@ -95,13 +488,13 @@
             uniform sampler2D prevState;
 
             #define PI 3.14159265359
+            uniform float dt;
 
           vec4 getDerivative(float p1, float p2, float t1, float t2) {
             float m = 1.0;
             float l = 1.0;
             float g = 9.8;
-            float dt = 0.01;
-            
+
             float dTheta = t2 - t1;
             float cosDTheta = cos(dTheta);
             float sinDTheta = sin(dTheta);
@@ -119,14 +512,13 @@
 
             float theta1dot = ((p1 - p2 * cosDTheta) * 2.0) / denom;
             float theta2dot = ((2.0 * p2 - p1 * cosDTheta) * 2.0) / denom;
-            
+
             return vec4(p1dot, p2dot, theta1dot, theta2dot);
           }
 
           void main() {
-          float dt = 0.01;
             vec4 s = texture2D(prevState, vUv);
-            
+
             float theta1 = s.r;
             float theta2 = s.g;
             float p1 = s.b;
@@ -148,6 +540,7 @@
           framebuffer: ({ tick }) => state[(tick + 1) % 2],
           uniforms: {
             prevState: ({ tick }) => state[tick % 2],
+            dt: () => parseFloat(document.getElementById("dt").value) || 0.01,
           },
         });
 
@@ -158,28 +551,122 @@
           frag: `
             precision mediump float;
             varying vec2 vUv;
+
             uniform sampler2D state;
+            uniform bool showDiff;
+            uniform vec3 CAMERA;
 
             void main() {
-              vec4 s = texture2D(state, vUv);
-              gl_FragColor = vec4(s.r, 0.0, s.g, 1.0);
+              vec2 uv = vUv / CAMERA.z + CAMERA.xy;
+
+              if (showDiff) {
+                vec4 s1 = texture2D(state, uv);
+                vec4 s2 = texture2D(state, uv + vec2(0.001, 0.001));
+                vec4 k = s2 - s1;
+                gl_FragColor = vec4(k.r, k.r, k.g, 1.0);
+              return;
+              }
+
+              vec4 s = texture2D(state, uv);
+              gl_FragColor = vec4(s.r, s.g, abs(s.r-s.g)/3.0, 1.0);
             }
           `,
           uniforms: {
             state: ({ tick }) => state[tick % 2],
+            showDiff: () => document.getElementById("show-diff").checked,
+            CAMERA: () => camera,
           },
         });
 
-        regl.frame(() => {
-          document.title = `Tick: ${regl.now().toFixed(2)}`;
+        reglFrame = regl.frame(() => {
+          document.title = `Tick: ${regl.now()}`;
           setupQuad(() => {
             calc();
             draw();
           });
+
+          document.getElementById("info").textContent =
+            `Camera: (${camera[0].toFixed(2)}, ${camera[1].toFixed(2)}, zoom: ${camera[2].toFixed(2)})
+            Initial Camera: (${initialCamera[0].toFixed(2)}, ${initialCamera[1].toFixed(2)}, zoom: ${initialCamera[2].toFixed(2)})
+            `;
+
+          if (clickedDatas) {
+            document.getElementById("clicked-coords").textContent =
+              `Initial angle: (${clickedDatas.theta1.toFixed(2)}, ${clickedDatas.theta2.toFixed(2)}) (double click to reset)`;
+
+            // We don't have to get actual pixel data from the GPU, we can just calculate the angles based on the clicked coordinates
+            drawDebug((Math.floor(regl.now() * 1000) % solvedData.length) - 1);
+          }
         });
-      } catch (e) {
-        alert("Error loading regl: " + e.message);
       }
+      mainSimulation();
+
+      document.getElementById("restart-btn").addEventListener("click", () => {
+        mainSimulation();
+      });
     </script>
+
+    <!-- Float options -->
+    <div
+      style="
+        position: fixed;
+        top: 10px;
+        left: 10px;
+        background: rgba(255, 255, 255, 0.8);
+        padding: 10px;
+        border-radius: 5px;
+        z-index: 1000;
+      "
+    >
+      <label>
+        <input type="checkbox" id="show-diff" onchange="" />
+        Show difference
+      </label>
+      <br />
+      <p id="info"></p>
+      <label>
+        Time step (dt):
+        <input
+          type="number"
+          id="dt"
+          value="0.01"
+          step="0.001"
+          onchange="
+            document.getElementById('dt').value = parseFloat(
+              this.value,
+            ).toFixed(3)
+          "
+        />
+        <span id="dt" style="display: none">0.010</span>
+      </label>
+      <br />
+      <label>
+        <input
+          type="range"
+          id="volume-slider"
+          min="0"
+          max="0.5"
+          step="0.01"
+          value="0.07"
+        />
+        Sound Volume
+      </label>
+
+      <br />
+      <label>
+        <input type="button" id="restart-btn" value="Restart simulation" />
+      </label>
+      <br />
+      <label>
+        <button id="reset-camera-btn">Reset All</button>
+      </label>
+      <p id="clicked-coords"></p>
+      <canvas
+        id="debug-canvas"
+        width="512"
+        height="512"
+        style="display: none"
+      ></canvas>
+    </div>
   </body>
 </html>

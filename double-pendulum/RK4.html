@@ -43,9 +43,9 @@
     }
 
     let p1 = 0; // p_theta
-    let theta1 = -2.0; // radian
+    let theta1 = parseFloat(urlParams.get("theta1")) || -2.0; // radian
     let p2 = 0;
-    let theta2 = -1;
+    let theta2 = parseFloat(urlParams.get("theta2")) || -1;
 
     let currentStep = 0;
 
@@ -56,7 +56,7 @@
         p2,
         theta1,
         theta2,
-        currentStep * dt + dt / 2
+        currentStep * dt + dt / 2,
       );
       const y1 = [
         p1 + (k1[0] * dt) / 2,
@@ -69,7 +69,7 @@
         y1[1],
         y1[2],
         y1[3],
-        currentStep * dt + dt / 2
+        currentStep * dt + dt / 2,
       );
       const y2 = [
         p1 + (k2[0] * dt) / 2,
@@ -82,7 +82,7 @@
         y2[1],
         y2[2],
         y2[3],
-        currentStep * dt + dt / 2
+        currentStep * dt + dt / 2,
       );
       const y3 = [
         p1 + k3[0] * dt,
@@ -95,7 +95,7 @@
         y3[1],
         y3[2],
         y3[3],
-        (currentStep + 1) * dt
+        (currentStep + 1) * dt,
       );
 
       p1 += (dt / 6) * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]);

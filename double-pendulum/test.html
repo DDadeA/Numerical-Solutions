@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Array to Sound</title>
+  </head>
+  <body>
+    <button id="playBtn">Play Array Sound</button>
+
+    <script>
+      // 1. Here is your array of numbers (-1.0 to 1.0)
+      // For this example, let's generate 1 second of white noise
+      const sampleRate = 44100; // 44,100 samples = 1 second of audio
+      const myArray = new Array(sampleRate);
+      for (let i = 0; i < myArray.length; i++) {
+        myArray[i] = Math.random() * 2 - 1; // Random numbers between -1 and 1
+      }
+
+      // 2. Setup the Audio Context
+      let audioCtx;
+
+      document.getElementById("playBtn").addEventListener("click", () => {
+        // Initialize the AudioContext on user click (required by browsers)
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+
+        // 3. Create an empty AudioBuffer
+        // Parameters: (numberOfChannels, lengthInSamples, sampleRate)
+        const buffer = audioCtx.createBuffer(
+          1,
+          myArray.length,
+          audioCtx.sampleRate,
+        );
+
+        // 4. Copy your array data into the AudioBuffer
+        // We get the first channel (0) since it's mono sound
+        const channelData = buffer.getChannelData(0);
+        for (let i = 0; i < myArray.length; i++) {
+          channelData[i] = myArray[i];
+        }
+
+        // 5. Create a source node to play the buffer
+        const source = audioCtx.createBufferSource();
+        source.buffer = buffer;
+
+        // Connect the source to the speakers (destination)
+        source.connect(audioCtx.destination);
+
+        // Play the sound!
+        source.start();
+      });
+    </script>
+  </body>
+</html>
